@@ -1,0 +1,12 @@
+Dockerfile*
+.dockerignore
+node_modules
+npm-debug.log
+README.md
+.next
+.git
+.tools
+.env*.local
+*.db
+*.db-journal
+*.sqlite

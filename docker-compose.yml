@@ -1,0 +1,45 @@
+services:
+  zenith-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: zenith_governance_hub
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://postgres:postgrespassword@postgres:5432/governance_hub?schema=public
+      - NEXTAUTH_URL=http://localhost:3000
+      - NEXTAUTH_SECRET=e98b7244a1b5d84d1566f120ac92837f4019dbca5796a32c69e2c6eefb4e47a5
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: governance_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_DB: governance_hub
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d governance_hub"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: governance_redis
+    restart: always
+    ports:
+      - "6379:6379"
+
+volumes:
+  pgdata:

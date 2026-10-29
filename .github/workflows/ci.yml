@@ -1,0 +1,34 @@
+name: Zenith CI Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Verify Production Compilation
+        run: npm run build
+        env:
+          NEXTAUTH_SECRET: "ci_pipeline_dummy_secret_for_build"
+          NEXTAUTH_URL: "http://localhost:3000"
+          DATABASE_URL: "file:./dev.db"

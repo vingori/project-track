@@ -1,0 +1,365 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ----------------------------------------------------
+// Organizations & Workspaces
+// ----------------------------------------------------
+model Organization {
+  id         String      @id @default(uuid())
+  name       String
+  slug       String      @unique
+  createdAt  DateTime    @default(now())
+  workspaces Workspace[]
+}
+
+model Workspace {
+  id             String       @id @default(uuid())
+  name           String
+  slug           String       @unique
+  orgId          String
+  organization   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  projects       Project[]
+  users          User[]
+  createdAt      DateTime     @default(now())
+}
+
+// ----------------------------------------------------
+// Identity & RBAC
+// ----------------------------------------------------
+model User {
+  id             String      @id @default(uuid())
+  email          String      @unique
+  name           String
+  passwordHash   String?
+  avatarUrl      String?
+  role           String      @default("DEV") // ADMIN, PM, LEAD, DEV, QA, SUPPORT_AGENT, STAKEHOLDER
+  workspaceId    String
+  workspace      Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  assignedIssues Issue[]     @relation("Assignee")
+  reportedIssues Issue[]     @relation("Reporter")
+  leadProjects   Project[]   @relation("ProjectLead")
+  comments       Comment[]
+  auditLogs      AuditLog[]
+  worklogs       Worklog[]
+  createdAt      DateTime    @default(now())
+}
+
+// ----------------------------------------------------
+// Projects & Typologies
+// ----------------------------------------------------
+model Project {
+  id           String           @id @default(uuid())
+  key          String           @unique // e.g. "CORE", "SUPP"
+  name         String
+  description  String?
+  type         String           @default("SOFTWARE_SCRUM") // SOFTWARE_SCRUM, SOFTWARE_KANBAN, SUPPORT_DESK, HYBRID_MILESTONE
+  ragStatus    String           @default("GREEN") // GREEN, AMBER, RED
+  leadId       String?
+  lead         User?            @relation("ProjectLead", fields: [leadId], references: [id])
+  workspaceId  String
+  workspace    Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  issues       Issue[]
+  sprints      Sprint[]
+  milestones   Milestone[]
+  workflow     Workflow?
+  slaPolicies  SlaPolicy[]
+  labels       Label[]
+  customFields CustomField[]
+  webhooks     Webhook[]
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+}
+
+// ----------------------------------------------------
+// Workflows (Configurable State Machine)
+// ----------------------------------------------------
+model Workflow {
+  id          String               @id @default(uuid())
+  name        String
+  projectId   String               @unique
+  project     Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  statuses    WorkflowStatus[]
+  transitions WorkflowTransition[]
+  createdAt   DateTime             @default(now())
+}
+
+model WorkflowStatus {
+  id          String               @id @default(uuid())
+  workflowId  String
+  workflow    Workflow             @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  name        String               // Backlog, To Do, In Progress, Review, QA, Resolved, Done
+  category    String               // TODO, IN_PROGRESS, IN_REVIEW, DONE
+  color       String               @default("#64748b")
+  order       Int                  @default(0)
+  issues      Issue[]
+  fromTrans   WorkflowTransition[] @relation("FromStatus")
+  toTrans     WorkflowTransition[] @relation("ToStatus")
+}
+
+model WorkflowTransition {
+  id           String         @id @default(uuid())
+  workflowId   String
+  workflow     Workflow       @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  name         String         // e.g. "Start Progress", "Submit for QA", "Resolve"
+  fromStatusId String
+  toStatusId   String
+  requiredRole String?        // e.g. "QA", "LEAD" (null = any role)
+  fromStatus   WorkflowStatus @relation("FromStatus", fields: [fromStatusId], references: [id], onDelete: Cascade)
+  toStatus     WorkflowStatus @relation("ToStatus", fields: [toStatusId], references: [id], onDelete: Cascade)
+}
+
+// ----------------------------------------------------
+// Delivery: Sprints & Milestones
+// ----------------------------------------------------
+model Sprint {
+  id             String    @id @default(uuid())
+  projectId      String
+  project        Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name           String    // e.g. "Sprint 14 - Q3 Release"
+  goal           String?
+  startDate      DateTime?
+  endDate        DateTime?
+  status         String    @default("PLANNING") // PLANNING, ACTIVE, COMPLETED
+  velocityPoints Int       @default(0)
+  issues         Issue[]
+  createdAt      DateTime  @default(now())
+}
+
+model Milestone {
+  id          String    @id @default(uuid())
+  projectId   String
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  targetDate  DateTime
+  status      String    @default("OPEN") // OPEN, REACHED, DELAYED
+  issues      Issue[]
+  createdAt   DateTime  @default(now())
+}
+
+// ----------------------------------------------------
+// Support & Service Desk: SLA Policies
+// ----------------------------------------------------
+model SlaPolicy {
+  id                 String   @id @default(uuid())
+  projectId          String
+  project            Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  priority           String   // CRITICAL, HIGH, MEDIUM, LOW
+  firstResponseMins  Int      // e.g. 30 mins for Critical
+  resolutionMins     Int      // e.g. 240 mins (4 hours)
+  createdAt          DateTime @default(now())
+}
+
+// ----------------------------------------------------
+// Issues (Unified Item Model for Sprints & Support)
+// ----------------------------------------------------
+model Issue {
+  id              String          @id @default(uuid())
+  key             String          @unique // e.g. "CORE-123"
+  numId           Int
+  title           String
+  description     String?
+  type            String          @default("TASK") // EPIC, STORY, TASK, BUG, INCIDENT, SERVICE_REQUEST
+  priority        String          @default("MEDIUM") // LOW, MEDIUM, HIGH, CRITICAL, BLOCKER
+  statusId        String
+  status          WorkflowStatus  @relation(fields: [statusId], references: [id])
+  projectId       String
+  project         Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sprintId        String?
+  sprint          Sprint?         @relation(fields: [sprintId], references: [id])
+  milestoneId     String?
+  milestone       Milestone?      @relation(fields: [milestoneId], references: [id])
+  assigneeId      String?
+  assignee        User?           @relation("Assignee", fields: [assigneeId], references: [id])
+  reporterId      String?
+  reporter        User?           @relation("Reporter", fields: [reporterId], references: [id])
+  storyPoints     Int?
+  estimatedHours  Float?
+  loggedHours     Float?          @default(0)
+  dueDate         DateTime?
+
+  // SLA Tracking (for Support & Incident Tickets)
+  slaFirstRespTarget DateTime?
+  slaFirstRespAt     DateTime?
+  slaResolveTarget   DateTime?
+  slaResolveAt       DateTime?
+  slaBreached        Boolean         @default(false)
+  customerEmail      String?
+
+  // Hierarchy & Relations
+  epicId          String?
+  epic            Issue?          @relation("EpicIssues", fields: [epicId], references: [id])
+  childIssues     Issue[]         @relation("EpicIssues")
+  parentId        String?
+  parent          Issue?          @relation("SubTasks", fields: [parentId], references: [id])
+  subTasks        Issue[]         @relation("SubTasks")
+
+  comments          Comment[]
+  auditLogs         AuditLog[]
+  attachments       Attachment[]
+  worklogs          Worklog[]
+  labels            Label[]
+  gitCommits        GitCommit[]
+  gitPullRequests   GitPullRequest[]
+  customFieldValues CustomFieldValue[]
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+}
+
+// ----------------------------------------------------
+// Time Tracking & Worklogs
+// ----------------------------------------------------
+model Worklog {
+  id              String   @id @default(uuid())
+  timeSpentHours  Float
+  description     String?
+  dateWorked      DateTime @default(now())
+  issueId         String
+  issue           Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt       DateTime @default(now())
+}
+
+// ----------------------------------------------------
+// File Attachments
+// ----------------------------------------------------
+model Attachment {
+  id        String   @id @default(uuid())
+  fileName  String
+  fileUrl   String
+  fileSize  Int      // in bytes
+  mimeType  String
+  issueId   String
+  issue     Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
+
+// ----------------------------------------------------
+// Git Integration: Commits & Pull Requests
+// ----------------------------------------------------
+model GitCommit {
+  id          String   @id @default(uuid())
+  hash        String   // short hash e.g. "a1b2c3d"
+  message     String
+  branch      String?
+  authorName  String
+  authorEmail String?
+  repoName    String   // e.g. "acme/core-api"
+  url         String?  // GitHub/GitLab link
+  issueId     String
+  issue       Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+}
+
+model GitPullRequest {
+  id           String   @id @default(uuid())
+  prNumber     Int      // e.g. 142
+  title        String
+  status       String   @default("OPEN") // OPEN, MERGED, CLOSED
+  sourceBranch String
+  targetBranch String   @default("main")
+  repoName     String
+  url          String?
+  issueId      String
+  issue        Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// ----------------------------------------------------
+// Dynamic Custom Fields
+// ----------------------------------------------------
+model CustomField {
+  id          String             @id @default(uuid())
+  name        String             // e.g. "Customer Tier", "Release Target"
+  key         String             // e.g. "customer_tier"
+  fieldType   String             @default("TEXT") // TEXT, NUMBER, SELECT, DATE, CHECKBOX
+  optionsJson String?            // JSON array for SELECT e.g. '["Tier 1 - Mission Critical", "Tier 2", "Standard"]'
+  required    Boolean            @default(false)
+  projectId   String
+  project     Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  values      CustomFieldValue[]
+  createdAt   DateTime           @default(now())
+}
+
+model CustomFieldValue {
+  id            String      @id @default(uuid())
+  customFieldId String
+  customField   CustomField @relation(fields: [customFieldId], references: [id], onDelete: Cascade)
+  issueId       String
+  issue         Issue       @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  value         String?     // Stored value stringified
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([customFieldId, issueId])
+}
+
+// ----------------------------------------------------
+// Automation & Webhook Notifications (Slack/Email/HTTP)
+// ----------------------------------------------------
+model Webhook {
+  id          String            @id @default(uuid())
+  name        String            // e.g. "Slack Alerts Channel", "CI Deployment Trigger"
+  url         String            // HTTP target endpoint
+  events      String            // Comma-separated: "ISSUE_CREATED,STATUS_CHANGED,SLA_BREACHED"
+  secret      String?           // HMAC verification secret
+  active      Boolean           @default(true)
+  projectId   String
+  project     Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  deliveries  WebhookDelivery[]
+  createdAt   DateTime          @default(now())
+}
+
+model WebhookDelivery {
+  id           String   @id @default(uuid())
+  webhookId    String
+  webhook      Webhook  @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+  event        String
+  statusCode   Int?
+  responseBody String?
+  durationMs   Int      @default(0)
+  createdAt    DateTime @default(now())
+}
+
+// ----------------------------------------------------
+// Collaboration & Audit Trails
+// ----------------------------------------------------
+model Comment {
+  id         String   @id @default(uuid())
+  issueId    String
+  issue      Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  authorId   String
+  author     User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  body       String
+  isInternal Boolean  @default(false) // Support desk private agent notes vs public replies
+  createdAt  DateTime @default(now())
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  issueId    String
+  issue      Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id])
+  field      String   // "status", "assignee", "priority", etc.
+  oldValue   String?
+  newValue   String?
+  createdAt  DateTime @default(now())
+}
+
+model Label {
+  id        String   @id @default(uuid())
+  name      String
+  color     String   @default("#3b82f6")
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  issues    Issue[]
+}
