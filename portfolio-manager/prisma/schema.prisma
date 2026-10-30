@@ -1,0 +1,86 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./portfolio.db"
+}
+
+model FamilyMember {
+  id                  String    @id @default(cuid())
+  name                String
+  relationship        String    // "Self", "Spouse", "Father", "Mother", "Child", "HUF"
+  pan                 String?
+  avatarColor         String?   @default("#10b981")
+  targetEquityPct     Float?    @default(50.0)
+  targetDebtPct       Float?    @default(20.0)
+  targetGoldPct       Float?    @default(15.0)
+  targetRealEstatePct Float?    @default(15.0)
+  accounts            Account[]
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+}
+
+model Account {
+  id             String        @id @default(cuid())
+  familyMemberId String
+  familyMember   FamilyMember  @relation(fields: [familyMemberId], references: [id], onDelete: Cascade)
+  name           String        // e.g., "Zerodha Demat", "Groww Mutual Funds", "ICICI Direct HUF", "SBI Home & FDs"
+  broker         String        // "Zerodha", "Groww", "Upstox", "ICICI Direct", "HDFC Sky", "Bank", "Physical/Registry", "Other"
+  accountType    String        // "DEMAT", "MUTUAL_FUND", "SAVINGS_FD", "COMMODITY_VAULT", "REAL_ESTATE", "OTHER"
+  accountNumber  String?
+  holdings       Holding[]
+  transactions   Transaction[]
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+}
+
+model Holding {
+  id              String        @id @default(cuid())
+  accountId       String
+  account         Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  symbol          String        // e.g. "RELIANCE", "TCS", "INFY", "PPFAS_FLEXICAP", "SGBNOV29", "WHITEFIELD_APARTMENT"
+  name            String        // Full display name
+  isin            String?
+  assetClass      String        // "EQUITY", "MUTUAL_FUND", "COMMODITY", "REAL_ESTATE", "FIXED_INCOME", "CASH"
+  subCategory     String?       // "Large Cap", "Mid Cap", "Small Cap", "Flexi Cap", "Gold SGB", "Physical Bullion", "Residential", "Commercial", "FD", "PPF"
+  quantity        Float         @default(0)
+  avgBuyPrice     Float         @default(0)
+  currentPrice    Float         @default(0)
+  lastPriceUpdate DateTime      @default(now())
+  sector          String?       // "Technology", "Financial Services", "Energy", "Automobile", "Healthcare", "Consumer", "Metals"
+  notes           String?
+  metadata        String?       // JSON: { "rentalYield": 4.2, "monthlyRent": 45000, "maturityDate": "2029-11-15", "interestRate": 7.5, "amfiCode": "122639" }
+  transactions    Transaction[]
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+}
+
+model Transaction {
+  id          String    @id @default(cuid())
+  accountId   String
+  account     Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  holdingId   String?
+  holding     Holding?  @relation(fields: [holdingId], references: [id], onDelete: SetNull)
+  type        String    // "BUY", "SELL", "DIVIDEND", "INTEREST", "RENT", "BONUS"
+  date        DateTime
+  quantity    Float     @default(0)
+  price       Float     @default(0)
+  amount      Float     // Cash flow: negative for investment outflow, positive for cash return
+  fees        Float     @default(0)
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model ImportLog {
+  id           String   @id @default(cuid())
+  fileName     String
+  broker       String
+  status       String   // "SUCCESS", "FAILED", "PARTIAL"
+  recordCount  Int      @default(0)
+  accountId    String?
+  errorMessage String?
+  createdAt    DateTime @default(now())
+}
