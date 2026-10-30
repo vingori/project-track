@@ -1,5 +1,0 @@
-symbol,name,asset_class,sub_category,quantity,avg_buy_price,current_price,sector,notes
-BAJFINANCE,Bajaj Finance Ltd,EQUITY,Large Cap,30,6400,7350,Financials,Consumer NBFC leader
-NIPPON_SILVER,Nippon India Silver ETF,COMMODITY,Silver ETF,1500,72.5,92.0,Commodities,Silver allocation hedge
-PRESTIGE_PLOT,Devenahalli 2400 sqft Villa Plot,REAL_ESTATE,Land / Plot,1,6500000,9800000,Bangalore North,Airport growth corridor
-SBI_TAX_SAVER_FD,SBI 5-Year Tax Saver Fixed Deposit,FIXED_INCOME,Fixed Deposit,1,500000,565000,Banking,80C Deduction FD

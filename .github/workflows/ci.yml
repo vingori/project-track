@@ -26,16 +26,9 @@ jobs:
       - name: Generate Prisma Client
         run: npx prisma generate
 
-      - name: Verify Production Compilation (Zenith)
+      - name: Verify Production Compilation
         run: npm run build
         env:
           NEXTAUTH_SECRET: "ci_pipeline_dummy_secret_for_build"
           NEXTAUTH_URL: "http://localhost:3000"
           DATABASE_URL: "file:./dev.db"
-
-      - name: Verify Production Compilation (WealthPulse PMS)
-        run: |
-          cd portfolio-manager
-          npm ci
-          npx prisma generate
-          npm run build
