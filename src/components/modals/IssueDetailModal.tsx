@@ -58,6 +58,9 @@ export default function IssueDetailModal() {
   const [newChildTitle, setNewChildTitle] = useState<string>("");
   const [newChildType, setNewChildType] = useState<string>("STORY");
   const [addingChild, setAddingChild] = useState<boolean>(false);
+  const [availableMilestones, setAvailableMilestones] = useState<any[]>([]);
+  const [selectedNewCollaboratorId, setSelectedNewCollaboratorId] = useState<string>("");
+  const [selectedCollaboratorRole, setSelectedCollaboratorRole] = useState<string>("COLLABORATOR");
 
   useEffect(() => {
     if (issue) {
@@ -334,8 +337,85 @@ export default function IssueDetailModal() {
           }
         })
         .catch(console.error);
+
+      fetch(`/api/projects/${issue.project.key}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (Array.isArray(data?.milestones)) {
+            setAvailableMilestones(data.milestones);
+          }
+        })
+        .catch(console.error);
     }
   }, [issue?.id, issue?.project?.key]);
+
+  const handleAddCollaborator = async () => {
+    if (!selectedIssueId || !selectedNewCollaboratorId) return;
+    setUpdating(true);
+    try {
+      await fetch(`/api/issues/${selectedIssueId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          addCollaboratorId: selectedNewCollaboratorId,
+          collaboratorRole: selectedCollaboratorRole,
+        }),
+      });
+      setSelectedNewCollaboratorId("");
+      fetchIssue();
+      triggerRefresh();
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleRemoveCollaborator = async (userId: string) => {
+    if (!selectedIssueId) return;
+    setUpdating(true);
+    try {
+      await fetch(`/api/issues/${selectedIssueId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          removeCollaboratorId: userId,
+        }),
+      });
+      fetchIssue();
+      triggerRefresh();
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleCategoryChange = async (cat: string) => {
+    setUpdating(true);
+    try {
+      await fetch(`/api/issues/${selectedIssueId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ category: cat }),
+      });
+      fetchIssue();
+      triggerRefresh();
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleMilestoneChange = async (mId: string) => {
+    setUpdating(true);
+    try {
+      await fetch(`/api/issues/${selectedIssueId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ milestoneId: mId || null }),
+      });
+      fetchIssue();
+      triggerRefresh();
+    } finally {
+      setUpdating(false);
+    }
+  };
 
   if (!selectedIssueId) return null;
 
@@ -1222,7 +1302,7 @@ export default function IssueDetailModal() {
               {/* Assignee */}
               <div>
                 <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1">
-                  Assignee
+                  Primary Assignee
                 </label>
                 <select
                   value={issue.assigneeId || ""}
@@ -1235,6 +1315,146 @@ export default function IssueDetailModal() {
                       {u.name} ({u.role})
                     </option>
                   ))}
+                </select>
+              </div>
+
+              {/* Multi-User Collaborators / Co-Workers */}
+              <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-850/60 p-3 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                    Co-Workers / Collaborators ({issue.collaborators?.length || 0})
+                  </label>
+                </div>
+
+                {/* Collaborators List */}
+                {issue.collaborators && issue.collaborators.length > 0 ? (
+                  <div className="space-y-1.5">
+                    {issue.collaborators.map((c: any) => (
+                      <div
+                        key={c.id}
+                        className="flex items-center justify-between p-1.5 rounded-md bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="h-5 w-5 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-[9px] flex-shrink-0">
+                            {c.user?.name?.split(" ").map((n: string) => n[0]).join("") || "C"}
+                          </div>
+                          <div className="truncate">
+                            <span className="font-semibold text-slate-900 dark:text-white truncate block text-[11px]">
+                              {c.user?.name}
+                            </span>
+                            <span className="text-[9px] text-slate-400 block -mt-0.5">
+                              {c.role || "Collaborator"}
+                            </span>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveCollaborator(c.userId)}
+                          className="text-slate-400 hover:text-rose-500 text-[11px] px-1 font-bold"
+                          title="Remove collaborator"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[10px] text-slate-400 italic">No co-workers assigned to this task yet.</p>
+                )}
+
+                {/* Add Collaborator Form */}
+                <div className="pt-2 border-t border-slate-200/60 dark:border-slate-700/60 space-y-2">
+                  <span className="text-[10px] font-semibold text-slate-500 block">+ Add Co-Worker:</span>
+                  <div className="grid grid-cols-1 gap-1.5">
+                    <select
+                      value={selectedNewCollaboratorId}
+                      onChange={(e) => setSelectedNewCollaboratorId(e.target.value)}
+                      className="w-full rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-[11px] text-slate-800 dark:text-slate-200"
+                    >
+                      <option value="">Select team member...</option>
+                      {users
+                        .filter(
+                          (u) =>
+                            u.id !== issue.assigneeId &&
+                            !issue.collaborators?.some((c: any) => c.userId === u.id)
+                        )
+                        .map((u) => (
+                          <option key={u.id} value={u.id}>
+                            {u.name} ({u.role})
+                          </option>
+                        ))}
+                    </select>
+
+                    <div className="flex gap-1.5">
+                      <select
+                        value={selectedCollaboratorRole}
+                        onChange={(e) => setSelectedCollaboratorRole(e.target.value)}
+                        className="flex-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-[11px] text-slate-800 dark:text-slate-200"
+                      >
+                        <option value="PAIR_DEV">Pair Dev</option>
+                        <option value="REVIEWER">Reviewer</option>
+                        <option value="QA_VERIFIER">QA Verifier</option>
+                        <option value="LEAD_DEV">Lead Dev</option>
+                        <option value="SUPPORT_AGENT">Support Agent</option>
+                        <option value="CONSULTANT">Consultant</option>
+                      </select>
+
+                      <button
+                        type="button"
+                        onClick={handleAddCollaborator}
+                        disabled={!selectedNewCollaboratorId}
+                        className="rounded bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white px-2.5 py-1 text-[10px] font-bold transition flex-shrink-0"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Milestone (Greenfield projects) */}
+              {availableMilestones.length > 0 && (
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1">
+                    Milestone Phase
+                  </label>
+                  <select
+                    value={issue.milestoneId || ""}
+                    onChange={(e) => handleMilestoneChange(e.target.value)}
+                    className="w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="">No Milestone</option>
+                    {availableMilestones.map((m: any) => (
+                      <option key={m.id} value={m.id}>
+                        🎯 {m.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Work Category */}
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1">
+                  Work Category / Scope
+                </label>
+                <select
+                  value={issue.category || "DEVELOPMENT"}
+                  onChange={(e) => handleCategoryChange(e.target.value)}
+                  className="w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="DEVELOPMENT">Development</option>
+                  <option value="MAINTENANCE">Maintenance</option>
+                  <option value="ARCHITECTURE">Architecture</option>
+                  <option value="DEVOPS">DevOps & Cloud</option>
+                  <option value="SECURITY">Security</option>
+                  <option value="DATABASE">Database</option>
+                  <option value="PERFORMANCE">Performance</option>
+                  <option value="QA">QA & Testing</option>
+                  <option value="CODE_REVIEW">Code Review</option>
+                  <option value="SUPPORT">Support / Incident</option>
+                  <option value="MEETING">Meeting / Planning</option>
                 </select>
               </div>
 

@@ -9,8 +9,10 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const projectKey = searchParams.get("projectKey");
     const sprintId = searchParams.get("sprintId");
+    const milestoneId = searchParams.get("milestoneId");
     const statusId = searchParams.get("statusId");
     const type = searchParams.get("type");
+    const category = searchParams.get("category");
     const search = searchParams.get("search");
 
     const where: any = {};
@@ -23,11 +25,19 @@ export async function GET(req: Request) {
     } else if (sprintId) {
       where.sprintId = sprintId;
     }
+    if (milestoneId === "none") {
+      where.milestoneId = null;
+    } else if (milestoneId) {
+      where.milestoneId = milestoneId;
+    }
     if (statusId) {
       where.statusId = statusId;
     }
     if (type) {
       where.type = type;
+    }
+    if (category) {
+      where.category = category;
     }
     if (search) {
       where.OR = [
@@ -57,6 +67,14 @@ export async function GET(req: Request) {
         reporter: {
           select: { id: true, name: true, email: true, role: true, avatarUrl: true },
         },
+        milestone: {
+          select: { id: true, title: true, status: true, progressPercent: true, targetDate: true },
+        },
+        collaborators: {
+          include: {
+            user: { select: { id: true, name: true, email: true, role: true, avatarUrl: true } },
+          },
+        },
         sprint: {
           select: { id: true, name: true, status: true },
         },
@@ -64,7 +82,7 @@ export async function GET(req: Request) {
           select: { id: true, key: true, title: true },
         },
         parent: {
-          select: { id: true, key: true, title: true },
+          select: { id: true, key: true, title: true, type: true },
         },
         subTasks: {
           select: {
@@ -74,6 +92,7 @@ export async function GET(req: Request) {
             estimatedHours: true,
             loggedHours: true,
             status: { select: { id: true, name: true, category: true, color: true } },
+            assignee: { select: { id: true, name: true, avatarUrl: true } },
           },
         },
         comments: {
@@ -83,6 +102,12 @@ export async function GET(req: Request) {
             },
           },
           orderBy: { createdAt: "asc" },
+        },
+        worklogs: {
+          include: {
+            user: { select: { id: true, name: true, avatarUrl: true } },
+          },
+          orderBy: { dateWorked: "desc" },
         },
         auditLogs: {
           include: {
@@ -105,41 +130,34 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     const {
-      projectId,
+      projectKey,
       title,
       description,
       type,
       priority,
       statusId,
       sprintId,
-      epicId,
-      parentId,
+      milestoneId,
       assigneeId,
       reporterId,
       storyPoints,
       estimatedHours,
-      dueDate,
-      customerEmail,
+      category,
+      collaboratorIds,
+      parentId,
+      epicId,
     } = body;
 
-    let targetProjectId = projectId;
-    let targetSprintId = sprintId;
-
-    if (parentId && !targetProjectId) {
-      const parent = await prisma.issue.findUnique({ where: { id: parentId } });
-      if (parent) {
-        targetProjectId = parent.projectId;
-        targetSprintId = parent.sprintId;
-      }
+    if (!title || !projectKey) {
+      return NextResponse.json({ error: "Title and projectKey are required" }, { status: 400 });
     }
 
     const project = await prisma.project.findUnique({
-      where: { id: targetProjectId },
+      where: { key: projectKey.toUpperCase() },
       include: {
         workflow: {
           include: { statuses: { orderBy: { order: "asc" } } },
         },
-        slaPolicies: true,
       },
     });
 
@@ -147,95 +165,89 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
 
-    // Default status if not provided: first status in workflow
-    const targetStatusId = statusId || project.workflow?.statuses[0]?.id;
+    // Determine Status
+    let targetStatusId = statusId;
     if (!targetStatusId) {
-      return NextResponse.json({ error: "No status found for project workflow" }, { status: 400 });
+      const defaultStatus = project.workflow?.statuses[0];
+      if (!defaultStatus) {
+        return NextResponse.json({ error: "No workflow status found for this project" }, { status: 400 });
+      }
+      targetStatusId = defaultStatus.id;
     }
 
-    // Get next issue number
+    // Determine next Issue Key
     const lastIssue = await prisma.issue.findFirst({
       where: { projectId: project.id },
       orderBy: { numId: "desc" },
     });
-    const nextNum = (lastIssue?.numId || 0) + 1;
-    const issueKey = `${project.key}-${nextNum}`;
+    const nextNumId = (lastIssue?.numId || 0) + 1;
+    const issueKey = `${project.key}-${nextNumId}`;
 
-    // Calculate SLA deadlines if applicable
-    let slaFirstRespTarget: Date | null = null;
-    let slaResolveTarget: Date | null = null;
-
-    const effectivePriority = priority || "MEDIUM";
-    const slaPolicy = project.slaPolicies.find((p) => p.priority === effectivePriority);
-    const now = new Date();
-
-    if (slaPolicy) {
-      slaFirstRespTarget = new Date(now.getTime() + slaPolicy.firstResponseMins * 60000);
-      slaResolveTarget = new Date(now.getTime() + slaPolicy.resolutionMins * 60000);
-    }
-
-    let defaultReporter: string | null = null;
-    if (reporterId) {
-      const u = await prisma.user.findUnique({ where: { id: reporterId }, select: { id: true } });
-      if (u) defaultReporter = u.id;
-    }
-    if (!defaultReporter) {
-      const firstUser = await prisma.user.findFirst({ select: { id: true } });
-      defaultReporter = firstUser?.id || null;
-    }
-
-    const issue = await prisma.issue.create({
+    const newIssue = await prisma.issue.create({
       data: {
         key: issueKey,
-        numId: nextNum,
-        title,
-        description,
-        type: type || (parentId ? "SUB_TASK" : "TASK"),
-        priority: effectivePriority,
+        numId: nextNumId,
+        title: title.trim(),
+        description: description?.trim() || null,
+        type: type || "TASK",
+        category: category || (project.type === "RETAINER" ? "MAINTENANCE" : "FEATURE"),
+        priority: priority || "MEDIUM",
         statusId: targetStatusId,
         projectId: project.id,
-        sprintId: targetSprintId || null,
-        epicId: epicId || null,
-        parentId: parentId || null,
+        sprintId: sprintId || null,
+        milestoneId: milestoneId || null,
         assigneeId: assigneeId || null,
-        reporterId: defaultReporter,
-        storyPoints: storyPoints ? parseInt(storyPoints, 10) : null,
-        estimatedHours: estimatedHours ? parseFloat(estimatedHours) : null,
-        dueDate: dueDate ? new Date(dueDate) : null,
-        customerEmail: customerEmail || null,
-        slaFirstRespTarget,
-        slaResolveTarget,
+        reporterId: reporterId || null,
+        storyPoints: storyPoints !== undefined ? parseInt(storyPoints) : null,
+        estimatedHours: estimatedHours !== undefined ? parseFloat(estimatedHours) : null,
+        parentId: parentId || null,
+        epicId: epicId || null,
       },
       include: {
         status: true,
         assignee: true,
         reporter: true,
-        epic: true,
-        parent: true,
+        milestone: true,
+        project: true,
       },
     });
 
-    // Write initial audit log
+    // Add Collaborators if provided
+    if (Array.isArray(collaboratorIds) && collaboratorIds.length > 0) {
+      for (const cUserId of collaboratorIds) {
+        if (cUserId) {
+          await prisma.issueCollaborator.create({
+            data: {
+              issueId: newIssue.id,
+              userId: cUserId,
+              role: "COLLABORATOR",
+            },
+          }).catch(() => {});
+        }
+      }
+    }
+
+    // Create Audit Log
     await prisma.auditLog.create({
       data: {
-        issueId: issue.id,
-        userId: defaultReporter,
+        issueId: newIssue.id,
+        userId: reporterId || assigneeId || null,
         field: "created",
         oldValue: null,
-        newValue: `${issue.type} created with status ${issue.status.name}`,
+        newValue: `${newIssue.type} created: ${newIssue.title}`,
       },
     });
 
-    // Emit real-time synchronization event
     emitAppEvent({
       type: "ISSUE_CREATED",
-      issueId: issue.id,
-      projectKey: project.key,
+      issueId: newIssue.id,
+      projectId: project.id,
+      data: newIssue,
     });
 
-    return NextResponse.json(issue, { status: 201 });
-  } catch (error) {
+    return NextResponse.json(newIssue, { status: 201 });
+  } catch (error: any) {
     console.error("Failed to create issue:", error);
-    return NextResponse.json({ error: "Failed to create issue" }, { status: 500 });
+    return NextResponse.json({ error: error.message || "Failed to create issue" }, { status: 500 });
   }
 }

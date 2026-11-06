@@ -21,6 +21,9 @@ export default function CreateIssueModal() {
   const [customerEmail, setCustomerEmail] = useState<string>("");
   const [epics, setEpics] = useState<any[]>([]);
   const [selectedEpicId, setSelectedEpicId] = useState<string>("");
+  const [milestones, setMilestones] = useState<any[]>([]);
+  const [selectedMilestoneId, setSelectedMilestoneId] = useState<string>("");
+  const [selectedCategory, setSelectedCategory] = useState<string>("DEVELOPMENT");
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,6 +35,25 @@ export default function CreateIssueModal() {
         .then((res) => res.json())
         .then((data) => {
           if (Array.isArray(data)) setEpics(data);
+        })
+        .catch(console.error);
+
+      fetch(`/api/projects/${proj.key}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (Array.isArray(data?.milestones)) {
+            setMilestones(data.milestones);
+            if (data.milestones.length > 0) {
+              setSelectedMilestoneId(data.milestones[0].id);
+            } else {
+              setSelectedMilestoneId("");
+            }
+          }
+          if (data?.type === "RETAINER") {
+            setSelectedCategory("MAINTENANCE");
+          } else {
+            setSelectedCategory("DEVELOPMENT");
+          }
         })
         .catch(console.error);
     }
@@ -82,10 +104,13 @@ export default function CreateIssueModal() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           projectId: selectedProjectId,
+          projectKey: currentProject?.key,
           title: title.trim(),
           description: description.trim(),
           type: selectedType,
           priority,
+          category: selectedCategory,
+          milestoneId: selectedMilestoneId || undefined,
           assigneeId: assigneeId || undefined,
           epicId: selectedEpicId || undefined,
           storyPoints: storyPoints ? parseInt(storyPoints, 10) : undefined,
@@ -275,6 +300,61 @@ export default function CreateIssueModal() {
                 ))}
               </select>
             </div>
+          </div>
+
+          {/* Category & Milestone */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Work Category / Scope
+              </label>
+              <select
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                className="w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-medium text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="DEVELOPMENT">Development</option>
+                <option value="MAINTENANCE">Maintenance</option>
+                <option value="ARCHITECTURE">Architecture</option>
+                <option value="DEVOPS">DevOps & Cloud</option>
+                <option value="SECURITY">Security</option>
+                <option value="DATABASE">Database</option>
+                <option value="PERFORMANCE">Performance</option>
+                <option value="QA">QA & Testing</option>
+                <option value="CODE_REVIEW">Code Review</option>
+                <option value="SUPPORT">Support / Incident</option>
+                <option value="MEETING">Meeting / Planning</option>
+              </select>
+            </div>
+
+            {milestones.length > 0 ? (
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Milestone Phase (Greenfield)
+                </label>
+                <select
+                  value={selectedMilestoneId}
+                  onChange={(e) => setSelectedMilestoneId(e.target.value)}
+                  className="w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-medium text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="">No Milestone</option>
+                  {milestones.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      🎯 {m.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Typology Mode
+                </label>
+                <div className="w-full rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 px-3 py-2 text-xs text-slate-600 dark:text-slate-400">
+                  {currentProject?.type === "RETAINER" ? "🔄 Retainer Recurring Scope" : "⚡ Agile Iteration"}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Support Ticket specific: Customer Email */}

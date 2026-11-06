@@ -47,6 +47,8 @@ model User {
   comments       Comment[]
   auditLogs      AuditLog[]
   worklogs       Worklog[]
+  healthChecks   ProjectHealthCheck[]
+  collaborations IssueCollaborator[]
   createdAt      DateTime    @default(now())
 }
 
@@ -54,26 +56,45 @@ model User {
 // Projects & Typologies
 // ----------------------------------------------------
 model Project {
-  id           String           @id @default(uuid())
-  key          String           @unique // e.g. "CORE", "SUPP"
-  name         String
-  description  String?
-  type         String           @default("SOFTWARE_SCRUM") // SOFTWARE_SCRUM, SOFTWARE_KANBAN, SUPPORT_DESK, HYBRID_MILESTONE
-  ragStatus    String           @default("GREEN") // GREEN, AMBER, RED
-  leadId       String?
-  lead         User?            @relation("ProjectLead", fields: [leadId], references: [id])
-  workspaceId  String
-  workspace    Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  issues       Issue[]
-  sprints      Sprint[]
-  milestones   Milestone[]
-  workflow     Workflow?
-  slaPolicies  SlaPolicy[]
-  labels       Label[]
-  customFields CustomField[]
-  webhooks     Webhook[]
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
+  id                    String               @id @default(uuid())
+  key                   String               @unique // e.g. "CORE", "SUPP", "APOLLO"
+  name                  String
+  description           String?
+  type                  String               @default("SOFTWARE_SCRUM") // GREENFIELD_MILESTONE, RETAINER, SOFTWARE_SCRUM, SUPPORT_DESK
+  ragStatus             String               @default("GREEN") // GREEN, AMBER, RED
+  leadId                String?
+  lead                  User?                @relation("ProjectLead", fields: [leadId], references: [id])
+  workspaceId           String
+  workspace             Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  clientName            String?
+  startDate             DateTime?
+  targetDate            DateTime?
+  budgetHours           Float?
+  budgetAmount          Float?
+  // Retainer specific configuration
+  retainerHours         Float?
+  retainerPeriod        String?              @default("MONTHLY") // MONTHLY, QUARTERLY
+  retainerRolloverHours Float?               @default(0)
+  retainerRolloverCap   Float?               @default(0)
+  retainerHourlyRate    Float?
+  retainerOverageRate   Float?
+  retainerStartDate     DateTime?
+  retainerRenewalDate   DateTime?
+  // Onboarding & Kickoff
+  onboardingStatus      String?              @default("COMPLETED") // DRAFT, IN_PROGRESS, COMPLETED
+  onboardingStep        Int?                 @default(1)
+  kickoffChecklist      String?              // JSON stringified checklist items
+  healthChecks          ProjectHealthCheck[]
+  issues                Issue[]
+  sprints               Sprint[]
+  milestones            Milestone[]
+  workflow              Workflow?
+  slaPolicies           SlaPolicy[]
+  labels                Label[]
+  customFields          CustomField[]
+  webhooks              Webhook[]
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
 }
 
 // ----------------------------------------------------
@@ -132,15 +153,39 @@ model Sprint {
 }
 
 model Milestone {
-  id          String    @id @default(uuid())
-  projectId   String
-  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  title       String
-  description String?
-  targetDate  DateTime
-  status      String    @default("OPEN") // OPEN, REACHED, DELAYED
-  issues      Issue[]
-  createdAt   DateTime  @default(now())
+  id              String    @id @default(uuid())
+  projectId       String
+  project         Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title           String
+  description     String?
+  targetDate      DateTime
+  status          String    @default("OPEN") // OPEN, REACHED, DELAYED
+  estimatedHours  Float?
+  loggedHours     Float?    @default(0)
+  order           Int       @default(0)
+  progressPercent Int       @default(0)
+  issues          Issue[]
+  createdAt       DateTime  @default(now())
+}
+
+// ----------------------------------------------------
+// Project Health Checks (Executive & Delivery Governance)
+// ----------------------------------------------------
+model ProjectHealthCheck {
+  id              String   @id @default(uuid())
+  projectId       String
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  status          String   @default("GREEN") // GREEN, AMBER, RED
+  scheduleHealth  String   @default("GREEN") // GREEN, AMBER, RED
+  budgetHealth    String   @default("GREEN") // GREEN, AMBER, RED
+  scopeHealth     String   @default("GREEN") // GREEN, AMBER, RED
+  clientSentiment String   @default("GOOD")  // EXCELLENT, GOOD, AT_RISK, POOR
+  summary         String
+  blockers        String?
+  nextSteps       String?
+  authorId        String
+  author          User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  createdAt       DateTime @default(now())
 }
 
 // ----------------------------------------------------
@@ -157,7 +202,7 @@ model SlaPolicy {
 }
 
 // ----------------------------------------------------
-// Issues (Unified Item Model for Sprints & Support)
+// Issues (Unified Item Model for Sprints, Retainers & Milestones)
 // ----------------------------------------------------
 model Issue {
   id              String          @id @default(uuid())
@@ -166,6 +211,7 @@ model Issue {
   title           String
   description     String?
   type            String          @default("TASK") // EPIC, STORY, TASK, BUG, INCIDENT, SERVICE_REQUEST
+  category        String?         // FEATURE, MAINTENANCE, RESEARCH, ADVISORY, BUGFIX, SLA
   priority        String          @default("MEDIUM") // LOW, MEDIUM, HIGH, CRITICAL, BLOCKER
   statusId        String
   status          WorkflowStatus  @relation(fields: [statusId], references: [id])
@@ -200,6 +246,8 @@ model Issue {
   parent          Issue?          @relation("SubTasks", fields: [parentId], references: [id])
   subTasks        Issue[]         @relation("SubTasks")
 
+  // Multi-user collaboration on similar/shared tasks
+  collaborators     IssueCollaborator[]
   comments          Comment[]
   auditLogs         AuditLog[]
   attachments       Attachment[]
@@ -213,12 +261,29 @@ model Issue {
 }
 
 // ----------------------------------------------------
-// Time Tracking & Worklogs
+// Multiple Users Collaborative Assignments
+// ----------------------------------------------------
+model IssueCollaborator {
+  id         String   @id @default(uuid())
+  issueId    String
+  issue      Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role       String   @default("COLLABORATOR") // LEAD_DEV, PAIR_DEV, REVIEWER, QA_VERIFIER, CONSULTANT
+  assignedAt DateTime @default(now())
+
+  @@unique([issueId, userId])
+}
+
+// ----------------------------------------------------
+// Time Tracking & Worklogs (Retainer & Milestone Timesheets)
 // ----------------------------------------------------
 model Worklog {
   id              String   @id @default(uuid())
   timeSpentHours  Float
   description     String?
+  billable        Boolean  @default(true)
+  category        String   @default("DEVELOPMENT") // DEVELOPMENT, DESIGN, CODE_REVIEW, SUPPORT, MEETING, QA, DEVOPS, PLANNING
   dateWorked      DateTime @default(now())
   issueId         String
   issue           Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)

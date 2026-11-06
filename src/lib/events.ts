@@ -13,8 +13,10 @@ if (process.env.NODE_ENV !== "production") {
 
 export type AppEvent =
   | { type: "ISSUE_UPDATED"; issueId: string; projectKey?: string; field?: string }
-  | { type: "ISSUE_CREATED"; issueId: string; projectKey?: string }
-  | { type: "COMMENT_ADDED"; issueId: string; commentId: string };
+  | { type: "ISSUE_CREATED"; issueId: string; projectKey?: string; projectId?: string; data?: any }
+  | { type: "COMMENT_ADDED"; issueId: string; commentId: string }
+  | { type: "WORKLOG_CREATED"; issueId: string; projectId?: string; data?: any }
+  | { type: "PROJECT_HEALTH_CHECK_CREATED"; projectId: string; data?: any };
 
 export function emitAppEvent(event: AppEvent) {
   eventBus.emit("app-event", event);

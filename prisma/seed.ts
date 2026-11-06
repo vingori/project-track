@@ -9,6 +9,9 @@ async function main() {
   const defaultPasswordHash = bcrypt.hashSync("password123", 10);
 
   // Clean existing data
+  await prisma.projectHealthCheck.deleteMany();
+  await prisma.issueCollaborator.deleteMany();
+  await prisma.worklog.deleteMany();
   await prisma.webhookDelivery.deleteMany();
   await prisma.webhook.deleteMany();
   await prisma.customFieldValue.deleteMany();
@@ -773,6 +776,718 @@ async function main() {
       statusCode: 200,
       responseBody: '{"ok": true}',
       durationMs: 84,
+    },
+  });
+
+  // ----------------------------------------------------
+  // PROJECT 3: Greenfield Milestone Delivery (Apollo Cloud Modernization)
+  // ----------------------------------------------------
+  const apolloProj = await prisma.project.create({
+    data: {
+      key: "APOLLO",
+      name: "Project Apollo: Cloud Infrastructure Modernization",
+      description: "Greenfield multi-region cloud migration with strict milestone gates and deliverables.",
+      type: "GREENFIELD_MILESTONE",
+      ragStatus: "GREEN",
+      leadId: david.id,
+      workspaceId: workspace.id,
+      clientName: "Astra Dynamics Aerospace",
+      startDate: new Date(now.getTime() - 30 * 86400000),
+      targetDate: new Date(now.getTime() + 60 * 86400000),
+      budgetHours: 400,
+      budgetAmount: 64000,
+      onboardingStatus: "COMPLETED",
+      kickoffChecklist: JSON.stringify([
+        { text: "Architectural blueprint and security whitepaper approved", completed: true },
+        { text: "Master Services Agreement (MSA) signed with Astra Dynamics", completed: true },
+        { text: "Multi-account AWS Landing Zone & Terraform state backend created", completed: true },
+        { text: "CI/CD runner permissions and secrets configured", completed: true },
+        { text: "Client stakeholder weekly cadence established", completed: true },
+      ]),
+    },
+  });
+
+  const apolloWorkflow = await prisma.workflow.create({
+    data: {
+      name: "Milestone Delivery Workflow",
+      projectId: apolloProj.id,
+    },
+  });
+
+  const apBacklog = await prisma.workflowStatus.create({
+    data: { workflowId: apolloWorkflow.id, name: "Backlog", category: "TODO", color: "#64748b", order: 1 },
+  });
+  const apTodo = await prisma.workflowStatus.create({
+    data: { workflowId: apolloWorkflow.id, name: "To Do", category: "TODO", color: "#3b82f6", order: 2 },
+  });
+  const apInProgress = await prisma.workflowStatus.create({
+    data: { workflowId: apolloWorkflow.id, name: "In Progress", category: "IN_PROGRESS", color: "#f59e0b", order: 3 },
+  });
+  const apReview = await prisma.workflowStatus.create({
+    data: { workflowId: apolloWorkflow.id, name: "Code Review", category: "IN_REVIEW", color: "#8b5cf6", order: 4 },
+  });
+  const apQa = await prisma.workflowStatus.create({
+    data: { workflowId: apolloWorkflow.id, name: "UAT & QA", category: "IN_REVIEW", color: "#ec4899", order: 5 },
+  });
+  const apDone = await prisma.workflowStatus.create({
+    data: { workflowId: apolloWorkflow.id, name: "Done", category: "DONE", color: "#10b981", order: 6 },
+  });
+
+  await prisma.workflowTransition.createMany({
+    data: [
+      { workflowId: apolloWorkflow.id, name: "Start Work", fromStatusId: apTodo.id, toStatusId: apInProgress.id },
+      { workflowId: apolloWorkflow.id, name: "Submit for Review", fromStatusId: apInProgress.id, toStatusId: apReview.id },
+      { workflowId: apolloWorkflow.id, name: "Pass Review to QA", fromStatusId: apReview.id, toStatusId: apQa.id },
+      { workflowId: apolloWorkflow.id, name: "Client Sign Off", fromStatusId: apQa.id, toStatusId: apDone.id, requiredRole: "QA" },
+      { workflowId: apolloWorkflow.id, name: "Reopen", fromStatusId: apDone.id, toStatusId: apTodo.id, requiredRole: "LEAD" },
+    ],
+  });
+
+  // Greenfield Milestones
+  const apM1 = await prisma.milestone.create({
+    data: {
+      projectId: apolloProj.id,
+      title: "Milestone 1: Architecture Specs & Threat Model",
+      description: "Baseline enterprise cloud topology, compliance review, and landing zone definition.",
+      targetDate: new Date(now.getTime() - 10 * 86400000),
+      status: "REACHED",
+      estimatedHours: 80,
+      loggedHours: 78,
+      order: 1,
+      progressPercent: 100,
+    },
+  });
+
+  const apM2 = await prisma.milestone.create({
+    data: {
+      projectId: apolloProj.id,
+      title: "Milestone 2: Core Microservices & Database Migration",
+      description: "Containerized workload deployment, Postgres read-replicas, and data sync pipeline.",
+      targetDate: new Date(now.getTime() + 15 * 86400000),
+      status: "OPEN",
+      estimatedHours: 140,
+      loggedHours: 96,
+      order: 2,
+      progressPercent: 68,
+    },
+  });
+
+  const apM3 = await prisma.milestone.create({
+    data: {
+      projectId: apolloProj.id,
+      title: "Milestone 3: Zero-Trust IAM & Vault Secrets",
+      description: "HashiCorp Vault automated rotation, OIDC integration, and network isolation.",
+      targetDate: new Date(now.getTime() + 35 * 86400000),
+      status: "OPEN",
+      estimatedHours: 100,
+      loggedHours: 32,
+      order: 3,
+      progressPercent: 32,
+    },
+  });
+
+  const apM4 = await prisma.milestone.create({
+    data: {
+      projectId: apolloProj.id,
+      title: "Milestone 4: UAT & Multi-Region Production Cutover",
+      description: "Final client user acceptance testing, failover drill, and DNS traffic switch.",
+      targetDate: new Date(now.getTime() + 60 * 86400000),
+      status: "OPEN",
+      estimatedHours: 80,
+      loggedHours: 0,
+      order: 4,
+      progressPercent: 0,
+    },
+  });
+
+  // Greenfield Issues (with multi-user collaborative tasks)
+  const apIssue1 = await prisma.issue.create({
+    data: {
+      key: "APOLLO-1",
+      numId: 1,
+      title: "Design Multi-Account AWS Landing Zone Architecture",
+      description: "Define VPC peering, Transit Gateway routing, and SOC2 compliance controls.",
+      type: "TASK",
+      priority: "HIGH",
+      statusId: apDone.id,
+      projectId: apolloProj.id,
+      milestoneId: apM1.id,
+      assigneeId: david.id,
+      reporterId: sarah.id,
+      estimatedHours: 35,
+      loggedHours: 35,
+      category: "ARCHITECTURE",
+    },
+  });
+
+  const apIssue2 = await prisma.issue.create({
+    data: {
+      key: "APOLLO-2",
+      numId: 2,
+      title: "Automate EKS Kubernetes Cluster Provisioning with Terraform",
+      description: "Automate worker node autoscaling, EBS CSI driver, and cert-manager.",
+      type: "TASK",
+      priority: "CRITICAL",
+      statusId: apDone.id,
+      projectId: apolloProj.id,
+      milestoneId: apM1.id,
+      assigneeId: elena.id,
+      reporterId: david.id,
+      estimatedHours: 45,
+      loggedHours: 43,
+      category: "DEVOPS",
+    },
+  });
+
+  // Collaborative Task 1: Elena + David collaborating on Database Migration
+  const apIssue3 = await prisma.issue.create({
+    data: {
+      key: "APOLLO-3",
+      numId: 3,
+      title: "PostgreSQL Database Migration with Zero-Downtime CDC Stream",
+      description: "Configure AWS DMS replication instance and validate checksums across source and target DBs.",
+      type: "STORY",
+      priority: "CRITICAL",
+      statusId: apInProgress.id,
+      projectId: apolloProj.id,
+      milestoneId: apM2.id,
+      assigneeId: elena.id,
+      reporterId: david.id,
+      estimatedHours: 60,
+      loggedHours: 44,
+      category: "DATABASE",
+    },
+  });
+
+  // Add Collaborators to APOLLO-3
+  await prisma.issueCollaborator.createMany({
+    data: [
+      { issueId: apIssue3.id, userId: elena.id, role: "LEAD_DEV" },
+      { issueId: apIssue3.id, userId: david.id, role: "REVIEWER" },
+      { issueId: apIssue3.id, userId: marcus.id, role: "QA_VERIFIER" },
+    ],
+  });
+
+  // Subtasks for APOLLO-3
+  await prisma.issue.create({
+    data: {
+      key: "APOLLO-3A",
+      numId: 31,
+      title: "Configure DMS Replication Tasks and Migration Rules",
+      type: "SUB_TASK",
+      priority: "HIGH",
+      statusId: apDone.id,
+      projectId: apolloProj.id,
+      parentId: apIssue3.id,
+      assigneeId: elena.id,
+      reporterId: david.id,
+      estimatedHours: 20,
+      loggedHours: 20,
+    },
+  });
+
+  await prisma.issue.create({
+    data: {
+      key: "APOLLO-3B",
+      numId: 32,
+      title: "Run Row Count and Foreign Key Integrity Validation Script",
+      type: "SUB_TASK",
+      priority: "HIGH",
+      statusId: apInProgress.id,
+      projectId: apolloProj.id,
+      parentId: apIssue3.id,
+      assigneeId: marcus.id,
+      reporterId: elena.id,
+      estimatedHours: 15,
+      loggedHours: 12,
+    },
+  });
+
+  // Collaborative Task 2: HashiCorp Vault Secrets
+  const apIssue4 = await prisma.issue.create({
+    data: {
+      key: "APOLLO-4",
+      numId: 4,
+      title: "Deploy HashiCorp Vault Cluster with Automated Credential Rotation",
+      description: "Integrate Kubernetes ServiceAccount token auth with Vault backend engine.",
+      type: "STORY",
+      priority: "HIGH",
+      statusId: apReview.id,
+      projectId: apolloProj.id,
+      milestoneId: apM3.id,
+      assigneeId: david.id,
+      reporterId: alex.id,
+      estimatedHours: 40,
+      loggedHours: 32,
+      category: "SECURITY",
+    },
+  });
+
+  await prisma.issueCollaborator.createMany({
+    data: [
+      { issueId: apIssue4.id, userId: david.id, role: "LEAD_DEV" },
+      { issueId: apIssue4.id, userId: elena.id, role: "PAIR_DEV" },
+    ],
+  });
+
+  const apIssue5 = await prisma.issue.create({
+    data: {
+      key: "APOLLO-5",
+      numId: 5,
+      title: "Implement Istio Service Mesh & Mutual TLS between Pods",
+      description: "Enforce mTLS strict mode and configure Envoy access logging to Elasticsearch.",
+      type: "TASK",
+      priority: "MEDIUM",
+      statusId: apTodo.id,
+      projectId: apolloProj.id,
+      milestoneId: apM2.id,
+      assigneeId: elena.id,
+      reporterId: david.id,
+      estimatedHours: 30,
+      loggedHours: 0,
+      category: "NETWORKING",
+    },
+  });
+
+  await prisma.issueCollaborator.createMany({
+    data: [
+      { issueId: apIssue5.id, userId: elena.id, role: "LEAD_DEV" },
+      { issueId: apIssue5.id, userId: david.id, role: "CONSULTANT" },
+    ],
+  });
+
+  const apIssue6 = await prisma.issue.create({
+    data: {
+      key: "APOLLO-6",
+      numId: 6,
+      title: "Simulate Multi-Region Disaster Recovery & DNS Failover Drill",
+      description: "Run test failover scenario transferring 100% simulated load to US-West-2 within 4 minutes.",
+      type: "TASK",
+      priority: "CRITICAL",
+      statusId: apBacklog.id,
+      projectId: apolloProj.id,
+      milestoneId: apM4.id,
+      assigneeId: marcus.id,
+      reporterId: sarah.id,
+      estimatedHours: 40,
+      loggedHours: 0,
+      category: "QA",
+    },
+  });
+
+  // Time logs for Apollo
+  await prisma.worklog.createMany({
+    data: [
+      {
+        issueId: apIssue1.id,
+        userId: david.id,
+        timeSpentHours: 20,
+        description: "Drafted VPC subnet layout, Transit Gateway attachments, and egress proxy routing.",
+        billable: true,
+        category: "ARCHITECTURE",
+        dateWorked: new Date(now.getTime() - 24 * 86400000),
+      },
+      {
+        issueId: apIssue1.id,
+        userId: david.id,
+        timeSpentHours: 15,
+        description: "Stakeholder security review and whitepaper signoff with Astra client team.",
+        billable: true,
+        category: "MEETING",
+        dateWorked: new Date(now.getTime() - 20 * 86400000),
+      },
+      {
+        issueId: apIssue3.id,
+        userId: elena.id,
+        timeSpentHours: 28,
+        description: "Configured AWS DMS replication instances, tested endpoint SSL certificates.",
+        billable: true,
+        category: "DEVELOPMENT",
+        dateWorked: new Date(now.getTime() - 4 * 86400000),
+      },
+      {
+        issueId: apIssue3.id,
+        userId: david.id,
+        timeSpentHours: 16,
+        description: "Co-working session on Postgres index tuning and CDC lag reduction.",
+        billable: true,
+        category: "CODE_REVIEW",
+        dateWorked: new Date(now.getTime() - 2 * 86400000),
+      },
+      {
+        issueId: apIssue4.id,
+        userId: david.id,
+        timeSpentHours: 20,
+        description: "Terraformed Vault high-availability cluster on AWS KMS backend.",
+        billable: true,
+        category: "DEVOPS",
+        dateWorked: new Date(now.getTime() - 3 * 86400000),
+      },
+      {
+        issueId: apIssue4.id,
+        userId: elena.id,
+        timeSpentHours: 12,
+        description: "Wrote Kubernetes agent sidecar injector configuration for dynamic DB leases.",
+        billable: true,
+        category: "DEVELOPMENT",
+        dateWorked: new Date(now.getTime() - 1 * 86400000),
+      },
+    ],
+  });
+
+  // Health Checks for Apollo Project
+  await prisma.projectHealthCheck.createMany({
+    data: [
+      {
+        projectId: apolloProj.id,
+        status: "GREEN",
+        scheduleHealth: "GREEN",
+        budgetHealth: "GREEN",
+        scopeHealth: "GREEN",
+        clientSentiment: "EXCELLENT",
+        summary: "Milestone 1 successfully reached ahead of target. Team velocity is optimal.",
+        blockers: null,
+        nextSteps: "Commence continuous data sync for Milestone 2 microservices.",
+        authorId: david.id,
+        createdAt: new Date(now.getTime() - 14 * 86400000),
+      },
+      {
+        projectId: apolloProj.id,
+        status: "GREEN",
+        scheduleHealth: "GREEN",
+        budgetHealth: "GREEN",
+        scopeHealth: "GREEN",
+        clientSentiment: "EXCELLENT",
+        summary: "Milestone 2 is 68% complete. PostgreSQL replication verified with zero data loss.",
+        blockers: "Minor lag on cross-region DMS instance during peak hours, resolved via IOPS boost.",
+        nextSteps: "Complete Vault credential rotation and submit for client UAT testing.",
+        authorId: david.id,
+        createdAt: new Date(now.getTime() - 2 * 86400000),
+      },
+    ],
+  });
+
+  // ----------------------------------------------------
+  // PROJECT 4: Retainer Style Project (Fintech Dedicated DevOps & SRE)
+  // ----------------------------------------------------
+  const retainProj = await prisma.project.create({
+    data: {
+      key: "RETAIN",
+      name: "Fintech Global: Dedicated DevOps & SRE Retainer",
+      description: "Monthly recurring retainer covering infrastructure reliability, security scans, cloud cost optimization, and SLA response.",
+      type: "RETAINER",
+      ragStatus: "AMBER",
+      leadId: david.id,
+      workspaceId: workspace.id,
+      clientName: "Fintech Global Payments",
+      startDate: new Date(now.getTime() - 90 * 86400000),
+      targetDate: new Date(now.getTime() + 275 * 86400000),
+      retainerHours: 50,
+      retainerPeriod: "MONTHLY",
+      retainerRolloverHours: 5,
+      retainerRolloverCap: 10,
+      retainerHourlyRate: 195,
+      retainerOverageRate: 250,
+      retainerStartDate: new Date(now.getFullYear(), now.getMonth(), 1),
+      retainerRenewalDate: new Date(now.getFullYear(), now.getMonth() + 1, 1),
+      onboardingStatus: "COMPLETED",
+      kickoffChecklist: JSON.stringify([
+        { text: "Monthly recurring billing agreement active (50 hrs + 5 rollover)", completed: true },
+        { text: "Direct PagerDuty escalation escalation bridge established", completed: true },
+        { text: "Client AWS read/write IAM role assumed via STS", completed: true },
+        { text: "Monthly vulnerability scanning schedule programmed", completed: true },
+      ]),
+    },
+  });
+
+  const retainWorkflow = await prisma.workflow.create({
+    data: {
+      name: "Retainer SRE Service Workflow",
+      projectId: retainProj.id,
+    },
+  });
+
+  const retBacklog = await prisma.workflowStatus.create({
+    data: { workflowId: retainWorkflow.id, name: "Scheduled Queue", category: "TODO", color: "#64748b", order: 1 },
+  });
+  const retTodo = await prisma.workflowStatus.create({
+    data: { workflowId: retainWorkflow.id, name: "This Cycle", category: "TODO", color: "#3b82f6", order: 2 },
+  });
+  const retInProgress = await prisma.workflowStatus.create({
+    data: { workflowId: retainWorkflow.id, name: "In Progress", category: "IN_PROGRESS", color: "#f59e0b", order: 3 },
+  });
+  const retReview = await prisma.workflowStatus.create({
+    data: { workflowId: retainWorkflow.id, name: "Client Review", category: "IN_REVIEW", color: "#8b5cf6", order: 4 },
+  });
+  const retDone = await prisma.workflowStatus.create({
+    data: { workflowId: retainWorkflow.id, name: "Completed & Billed", category: "DONE", color: "#10b981", order: 5 },
+  });
+
+  await prisma.workflowTransition.createMany({
+    data: [
+      { workflowId: retainWorkflow.id, name: "Activate in Cycle", fromStatusId: retBacklog.id, toStatusId: retTodo.id },
+      { workflowId: retainWorkflow.id, name: "Start Retainer Work", fromStatusId: retTodo.id, toStatusId: retInProgress.id },
+      { workflowId: retainWorkflow.id, name: "Submit for Client Review", fromStatusId: retInProgress.id, toStatusId: retReview.id },
+      { workflowId: retainWorkflow.id, name: "Complete Work", fromStatusId: retReview.id, toStatusId: retDone.id },
+      { workflowId: retainWorkflow.id, name: "Reopen", fromStatusId: retDone.id, toStatusId: retTodo.id, requiredRole: "LEAD" },
+    ],
+  });
+
+  // Retainer Tasks (with multi-user collaborative assignments)
+  const retIssue1 = await prisma.issue.create({
+    data: {
+      key: "RETAIN-1",
+      numId: 1,
+      title: "Monthly PCI-DSS Compliance & CVE Security Patching",
+      description: "Upgrade Linux kernel on all production bastion hosts and verify container base image CVEs.",
+      type: "TASK",
+      priority: "CRITICAL",
+      statusId: retDone.id,
+      projectId: retainProj.id,
+      assigneeId: david.id,
+      reporterId: sarah.id,
+      estimatedHours: 12,
+      loggedHours: 14,
+      category: "MAINTENANCE",
+    },
+  });
+
+  await prisma.issueCollaborator.createMany({
+    data: [
+      { issueId: retIssue1.id, userId: david.id, role: "LEAD_DEV" },
+      { issueId: retIssue1.id, userId: marcus.id, role: "QA_VERIFIER" },
+    ],
+  });
+
+  const retIssue2 = await prisma.issue.create({
+    data: {
+      key: "RETAIN-2",
+      numId: 2,
+      title: "PostgreSQL Query Performance Tuning & Autovacuum Reorganization",
+      description: "Tune shared_buffers, analyze bloat on ledger_transactions table, and install pg_stat_statements.",
+      type: "TASK",
+      priority: "HIGH",
+      statusId: retInProgress.id,
+      projectId: retainProj.id,
+      assigneeId: elena.id,
+      reporterId: david.id,
+      estimatedHours: 16,
+      loggedHours: 18.5,
+      category: "PERFORMANCE",
+    },
+  });
+
+  await prisma.issueCollaborator.createMany({
+    data: [
+      { issueId: retIssue2.id, userId: elena.id, role: "LEAD_DEV" },
+      { issueId: retIssue2.id, userId: david.id, role: "REVIEWER" },
+    ],
+  });
+
+  const retIssue3 = await prisma.issue.create({
+    data: {
+      key: "RETAIN-3",
+      numId: 3,
+      title: "Upgrade Staging Kubernetes Clusters to v1.31 and reconcile Helm charts",
+      description: "Test API deprecation removals and rollout node pools with zero pod evictions.",
+      type: "TASK",
+      priority: "MEDIUM",
+      statusId: retReview.id,
+      projectId: retainProj.id,
+      assigneeId: david.id,
+      reporterId: alex.id,
+      estimatedHours: 10,
+      loggedHours: 8,
+      category: "DEVOPS",
+    },
+  });
+
+  await prisma.issueCollaborator.createMany({
+    data: [
+      { issueId: retIssue3.id, userId: david.id, role: "LEAD_DEV" },
+      { issueId: retIssue3.id, userId: elena.id, role: "PAIR_DEV" },
+    ],
+  });
+
+  const retIssue4 = await prisma.issue.create({
+    data: {
+      key: "RETAIN-4",
+      numId: 4,
+      title: "Investigate and resolve intermittent Stripe webhook delivery timeouts",
+      description: "Diagnose connection drops during flash settlement bursts; increase worker concurrency pool.",
+      type: "INCIDENT",
+      priority: "CRITICAL",
+      statusId: retDone.id,
+      projectId: retainProj.id,
+      assigneeId: elena.id,
+      reporterId: priya.id,
+      estimatedHours: 6,
+      loggedHours: 6,
+      category: "SLA",
+    },
+  });
+
+  await prisma.issueCollaborator.createMany({
+    data: [
+      { issueId: retIssue4.id, userId: elena.id, role: "LEAD_DEV" },
+      { issueId: retIssue4.id, userId: priya.id, role: "SUPPORT_AGENT" },
+    ],
+  });
+
+  const retIssue5 = await prisma.issue.create({
+    data: {
+      key: "RETAIN-5",
+      numId: 5,
+      title: "Optimize GitHub Actions CI/CD Docker Layer Caching (Target < 5 mins)",
+      description: "Configure BuildKit remote cache with GitHub Actions cache backend.",
+      type: "TASK",
+      priority: "LOW",
+      statusId: retTodo.id,
+      projectId: retainProj.id,
+      assigneeId: elena.id,
+      reporterId: david.id,
+      estimatedHours: 8,
+      loggedHours: 0,
+      category: "OPTIMIZATION",
+    },
+  });
+
+  await prisma.issueCollaborator.createMany({
+    data: [
+      { issueId: retIssue5.id, userId: elena.id, role: "LEAD_DEV" },
+      { issueId: retIssue5.id, userId: marcus.id, role: "QA_VERIFIER" },
+    ],
+  });
+
+  // Worklogs for Retainer Project (Total logged = 14 + 18.5 + 8 + 6 = 46.5 hours out of 55 available)
+  await prisma.worklog.createMany({
+    data: [
+      {
+        issueId: retIssue1.id,
+        userId: david.id,
+        timeSpentHours: 9,
+        description: "Applied security patches across 14 bastion and proxy nodes.",
+        billable: true,
+        category: "MAINTENANCE",
+        dateWorked: new Date(now.getTime() - 8 * 86400000),
+      },
+      {
+        issueId: retIssue1.id,
+        userId: marcus.id,
+        timeSpentHours: 5,
+        description: "Vulnerability scan validation and compliance report generation.",
+        billable: true,
+        category: "QA",
+        dateWorked: new Date(now.getTime() - 7 * 86400000),
+      },
+      {
+        issueId: retIssue2.id,
+        userId: elena.id,
+        timeSpentHours: 11.5,
+        description: "Diagnosed table bloat on transaction ledger; tuned autovacuum scale factors.",
+        billable: true,
+        category: "PERFORMANCE",
+        dateWorked: new Date(now.getTime() - 4 * 86400000),
+      },
+      {
+        issueId: retIssue2.id,
+        userId: david.id,
+        timeSpentHours: 7,
+        description: "Co-investigation of p99 lock waits and index restructuring.",
+        billable: true,
+        category: "DEVELOPMENT",
+        dateWorked: new Date(now.getTime() - 3 * 86400000),
+      },
+      {
+        issueId: retIssue3.id,
+        userId: david.id,
+        timeSpentHours: 8,
+        description: "Upgraded EKS staging control plane and worker node group to v1.31.",
+        billable: true,
+        category: "DEVOPS",
+        dateWorked: new Date(now.getTime() - 2 * 86400000),
+      },
+      {
+        issueId: retIssue4.id,
+        userId: elena.id,
+        timeSpentHours: 4,
+        description: "Patched webhook consumer pool concurrency to eliminate timeout spikes.",
+        billable: true,
+        category: "SUPPORT",
+        dateWorked: new Date(now.getTime() - 1 * 86400000),
+      },
+      {
+        issueId: retIssue4.id,
+        userId: priya.id,
+        timeSpentHours: 2,
+        description: "Client incident post-mortem call and ticket closure documentation.",
+        billable: true,
+        category: "SUPPORT",
+        dateWorked: new Date(now.getTime() - 1 * 86400000),
+      },
+    ],
+  });
+
+  // Retainer Health Checks
+  await prisma.projectHealthCheck.createMany({
+    data: [
+      {
+        projectId: retainProj.id,
+        status: "GREEN",
+        scheduleHealth: "GREEN",
+        budgetHealth: "GREEN",
+        scopeHealth: "GREEN",
+        clientSentiment: "EXCELLENT",
+        summary: "Retainer cycle kickoff. Routine vulnerability patching completed on time.",
+        blockers: null,
+        nextSteps: "Proceed with scheduled K8s v1.31 upgrade.",
+        authorId: david.id,
+        createdAt: new Date(now.getTime() - 12 * 86400000),
+      },
+      {
+        projectId: retainProj.id,
+        status: "AMBER",
+        scheduleHealth: "GREEN",
+        budgetHealth: "AMBER",
+        scopeHealth: "GREEN",
+        clientSentiment: "GOOD",
+        summary: "High retainer burn: 46.5 / 55 hours burned (84.5% consumed) with 10 days left in billing cycle.",
+        blockers: "Unplanned emergency database performance remediation consumed 18.5 hours.",
+        nextSteps: "Client notified of projected 10-hour overage at standard overage rate ($250/hr). Client signed off.",
+        authorId: david.id,
+        createdAt: new Date(now.getTime() - 1 * 86400000),
+      },
+    ],
+  });
+
+  // Core & Supp Health Checks
+  await prisma.projectHealthCheck.create({
+    data: {
+      projectId: coreProj.id,
+      status: "GREEN",
+      scheduleHealth: "GREEN",
+      budgetHealth: "GREEN",
+      scopeHealth: "GREEN",
+      clientSentiment: "EXCELLENT",
+      summary: "Sprint 22 progressing smoothly. State machine transition guards completed.",
+      authorId: david.id,
+      createdAt: new Date(now.getTime() - 3 * 86400000),
+    },
+  });
+
+  await prisma.projectHealthCheck.create({
+    data: {
+      projectId: suppProj.id,
+      status: "AMBER",
+      scheduleHealth: "AMBER",
+      budgetHealth: "GREEN",
+      scopeHealth: "AMBER",
+      clientSentiment: "AT_RISK",
+      summary: "SLA response target under pressure due to critical latency incident in US-East-1.",
+      blockers: "Waiting on customer network firewall validation.",
+      nextSteps: "Follow up with client enterprise network administrator.",
+      authorId: priya.id,
+      createdAt: new Date(now.getTime() - 1 * 86400000),
     },
   });
 

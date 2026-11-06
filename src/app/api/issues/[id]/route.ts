@@ -43,6 +43,12 @@ export async function GET(
           },
         },
         sprint: true,
+        milestone: true,
+        collaborators: {
+          include: {
+            user: { select: { id: true, name: true, email: true, avatarUrl: true, role: true } },
+          },
+        },
         epic: {
           select: { id: true, key: true, title: true },
         },
@@ -121,7 +127,7 @@ export async function PATCH(
 ) {
   try {
     const body = await req.json();
-    const { statusId, assigneeId, priority, storyPoints, estimatedHours, sprintId, title, description, userRole, epicId, parentId } = body;
+    const { statusId, assigneeId, priority, storyPoints, estimatedHours, sprintId, title, description, userRole, epicId, parentId, category, milestoneId, addCollaboratorId, removeCollaboratorId } = body;
 
     const session = await getServerSession(authOptions);
     const effectiveRole = session?.user?.role || userRole || "ADMIN";
@@ -275,6 +281,48 @@ export async function PATCH(
       auditEntries.push({ field: "parent", oldValue: existingIssue.parentId, newValue: parentId || "None" });
     }
 
+    if (category !== undefined && category !== existingIssue.category) {
+      updates.category = category || null;
+      auditEntries.push({ field: "category", oldValue: existingIssue.category, newValue: category || "None" });
+    }
+
+    if (milestoneId !== undefined && milestoneId !== existingIssue.milestoneId) {
+      updates.milestoneId = milestoneId || null;
+      auditEntries.push({ field: "milestone", oldValue: existingIssue.milestoneId, newValue: milestoneId || "None" });
+    }
+
+    // Handle adding collaborator
+    if (addCollaboratorId) {
+      await prisma.issueCollaborator.upsert({
+        where: {
+          issueId_userId: {
+            issueId: params.id,
+            userId: addCollaboratorId,
+          },
+        },
+        create: {
+          issueId: params.id,
+          userId: addCollaboratorId,
+          role: body.collaboratorRole || "COLLABORATOR",
+        },
+        update: {
+          role: body.collaboratorRole || "COLLABORATOR",
+        },
+      }).catch(() => {});
+      auditEntries.push({ field: "collaborator", oldValue: null, newValue: `Added collaborator` });
+    }
+
+    // Handle removing collaborator
+    if (removeCollaboratorId) {
+      await prisma.issueCollaborator.deleteMany({
+        where: {
+          issueId: params.id,
+          userId: removeCollaboratorId,
+        },
+      }).catch(() => {});
+      auditEntries.push({ field: "collaborator", oldValue: "Removed", newValue: null });
+    }
+
     const updatedIssue = await prisma.issue.update({
       where: { id: params.id },
       data: updates,
@@ -290,6 +338,12 @@ export async function PATCH(
         },
         assignee: true,
         reporter: true,
+        milestone: true,
+        collaborators: {
+          include: {
+            user: { select: { id: true, name: true, email: true, avatarUrl: true, role: true } },
+          },
+        },
         epic: { select: { id: true, key: true, title: true } },
         parent: { select: { id: true, key: true, title: true } },
       },
